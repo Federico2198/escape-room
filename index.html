@@ -1,0 +1,960 @@
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>Rescatar a ROBI</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Chakra+Petch:wght@500;600;700&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* Layout: barra fija arriba (marca, 5 casilleros de letras, tiempo y pistas). Debajo, una pantalla por vez: inicio, mapa de salas con ROBI, cinco salas, palabra final. */
+:root{
+  --ink:#0B2545; --ink-2:#1B3C6B; --paper:#E8F0F6; --panel:#FFFFFF; --line:#C5D3E0; --dot:#CBD9E6; --muted:#4A6178;
+  --robot:#D9480F; --robot-dk:#A93608; --robot-soft:#FFE6DA;
+  --signal:#0A7F8C; --signal-soft:#D6F2F4; --sun:#FFC933;
+  --ok:#16794A; --ok-soft:#D9F2E3; --bad:#B8283A; --bad-soft:#FBDDE1;
+  --f-display:'Chakra Petch',system-ui,sans-serif; --f-body:'Atkinson Hyperlegible',system-ui,sans-serif; --f-mono:'JetBrains Mono',ui-monospace,monospace;
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+body{background:var(--paper);background-image:radial-gradient(var(--dot) 1.2px,transparent 1.4px);background-size:22px 22px;color:var(--ink);font:400 17px/1.5 var(--f-body)}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);background:var(--ink);z-index:30}
+h1,h2,h3{font-family:var(--f-display);line-height:1.15;margin:0;text-wrap:balance}
+p{margin:0}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--signal);outline-offset:2px}
+
+.hud{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:var(--ink);color:#fff;border-bottom:4px solid var(--sun)}
+.hud-in{max-width:1100px;margin:0 auto;padding:10px max(16px,env(safe-area-inset-right,0px)) 10px max(16px,env(safe-area-inset-left,0px));display:grid;grid-template-columns:auto 1fr auto;gap:12px 20px;align-items:center}
+.brand{display:flex;align-items:center;gap:10px;font:700 20px var(--f-display);letter-spacing:.02em}
+.led{width:12px;height:12px;border-radius:50%;background:#FF6B6B;box-shadow:0 0 0 3px rgba(255,107,107,.25)}
+.led.up{background:#4ADE80;box-shadow:0 0 0 3px rgba(74,222,128,.25)}
+.slots{display:flex;gap:8px;justify-content:center}
+.slot{width:42px;height:50px;border:2px dashed #6E8DB1;border-radius:8px;display:grid;place-items:center;font:700 26px var(--f-display);color:#7F9BBB}
+.slot.on{background:var(--sun);border:2px solid var(--sun);color:var(--ink);animation:pop .45s}
+.stats{display:flex;gap:18px;align-items:center}
+.stat{display:flex;flex-direction:column;align-items:flex-end;line-height:1.1}
+.stat b{font:700 22px var(--f-mono);font-variant-numeric:tabular-nums}
+.stat small{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#A9C0DA}
+.timer.warn b{color:var(--sun)} .timer.crit b{color:#FF9A9A}
+.gear{background:transparent;border:2px solid #5F7FA3;color:#fff;border-radius:8px;padding:6px 10px;cursor:pointer;font-size:14px}
+.gear:hover{background:var(--ink-2)}
+
+.app{max-width:1100px;margin:0 auto;padding-block:22px 56px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.view{display:grid;gap:20px}
+.view[hidden]{display:none}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:2px solid var(--ink);background:var(--panel);color:var(--ink);border-radius:10px;padding:10px 18px;font:700 16px var(--f-body);cursor:pointer;box-shadow:0 4px 0 var(--ink);transition:transform .08s,box-shadow .08s}
+.btn:hover{transform:translateY(1px);box-shadow:0 3px 0 var(--ink)}
+.btn:active{transform:translateY(4px);box-shadow:0 0 0 var(--ink)}
+.btn.primary{background:var(--robot);border-color:var(--robot-dk);color:#fff;box-shadow:0 4px 0 var(--robot-dk)}
+.btn.primary:hover{box-shadow:0 3px 0 var(--robot-dk)} .btn.primary:active{box-shadow:0 0 0 var(--robot-dk)}
+.btn.big{font-size:19px;padding:14px 26px}
+.btn.small{padding:6px 12px;font-size:14px;box-shadow:0 3px 0 var(--ink)}
+.btn.ghost{background:transparent;box-shadow:none;border-color:var(--line)}
+.btn[disabled]{opacity:.45;cursor:not-allowed;transform:none}
+.link{background:none;border:0;padding:0;color:var(--ink-2);text-decoration:underline;cursor:pointer;font-weight:700}
+
+.panel{background:var(--panel);border:2px solid var(--ink);border-radius:14px;padding:22px}
+.eyebrow{font:700 12px var(--f-display);letter-spacing:.14em;text-transform:uppercase;color:var(--robot)}
+.lead{font-size:19px;color:var(--ink-2)}
+.story{border-left:6px solid var(--robot);padding-left:16px;font-size:19px}
+.chip{display:inline-block;font:700 12px var(--f-display);letter-spacing:.1em;text-transform:uppercase;background:var(--signal-soft);color:var(--signal);padding:4px 10px;border-radius:999px}
+
+/* Inicio */
+.intro{display:grid;grid-template-columns:1.2fr .8fr;gap:24px;align-items:center}
+.intro h1{font-size:clamp(34px,6vw,58px)}
+.intro .rules{display:grid;gap:10px;margin:0;padding:0;list-style:none}
+.intro .rules li{display:flex;gap:12px;align-items:flex-start}
+.intro .rules b{flex:none;width:28px;height:28px;border-radius:50%;background:var(--ink);color:#fff;display:grid;place-items:center;font:700 14px var(--f-display)}
+.field{display:grid;gap:6px}
+.field label{font-weight:700}
+.field input,.field select{border:2px solid var(--ink);border-radius:10px;padding:10px 12px;background:#fff;min-width:0}
+
+/* ROBI */
+.robi{width:100%;max-width:300px;height:auto;display:block;margin:0 auto}
+.robi [data-at]{opacity:.18;transition:opacity .5s,fill .5s}
+.robi [data-at].on{opacity:1}
+.robi .glitch{opacity:1;transition:opacity .4s} .robi .glitch.off{opacity:0}
+.robi .static{animation:flick .9s steps(2) infinite}
+.robi.happy{animation:bob 1.6s ease-in-out infinite}
+
+/* Mapa */
+.hub{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);gap:22px;align-items:start}
+.hub-robi{text-align:center;display:grid;gap:10px}
+.meter{height:14px;border:2px solid var(--ink);border-radius:999px;background:#fff;overflow:hidden}
+.meter i{display:block;height:100%;background:var(--signal);transition:width .6s}
+.rooms{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.room-tile{text-align:left;display:grid;grid-template-columns:auto 1fr;gap:6px 14px;align-items:center;background:var(--panel);border:2px solid var(--ink);border-radius:12px;padding:14px;cursor:pointer;box-shadow:0 4px 0 var(--ink)}
+.room-tile:hover{transform:translateY(1px);box-shadow:0 3px 0 var(--ink)}
+.room-tile .box{grid-row:span 2;width:54px;height:62px;border:2px dashed var(--muted);border-radius:8px;display:grid;place-items:center;font:700 32px var(--f-display);color:var(--muted)}
+.room-tile[disabled]{opacity:.55;cursor:not-allowed;background:#EEF3F8;box-shadow:none;transform:none}
+.room-tile.done{background:var(--ok-soft);border-color:var(--ok);box-shadow:0 4px 0 var(--ok)}
+.room-tile.done .box{background:var(--sun);border:2px solid var(--ink);color:var(--ink)}
+.room-tile h3{font-size:18px}
+.room-tile .sub{font-size:15px;color:var(--muted);grid-column:2}
+.room-tile.fin{grid-column:1/-1;background:var(--ink);color:#fff;border-color:var(--ink);box-shadow:0 4px 0 var(--sun)}
+.room-tile.fin .box{border-color:#7F9BBB;color:#7F9BBB}
+.room-tile.fin .sub{color:#B9CCE3}
+.room-tile.fin[disabled]{opacity:.55;cursor:not-allowed}
+
+/* Salas */
+.room-head{display:grid;gap:8px}
+.room-head h2{font-size:clamp(26px,4.5vw,38px)}
+.back{justify-self:start}
+.hintbox{display:grid;gap:10px;background:var(--signal-soft);border:2px solid var(--signal);border-radius:12px;padding:14px}
+.hintbox ol{margin:0;padding-left:22px;display:grid;gap:6px}
+.hintbox .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.hintbox .count{font-size:14px;color:var(--ink-2)}
+.note{border-radius:10px;padding:12px 14px;font-weight:700}
+.note.ok{background:var(--ok-soft);color:var(--ok)} .note.bad{background:var(--bad-soft);color:var(--bad)} .note.info{background:var(--signal-soft);color:var(--signal)}
+.note p+p{margin-top:6px;font-weight:400;color:var(--ink)}
+.section-title{font:700 14px var(--f-display);letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.actions{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+
+/* Sala 1 */
+.folder{background:#F3F8FC;border:2px dashed var(--ink-2);border-radius:12px;padding:16px;display:grid;gap:12px}
+.folder-top{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center}
+.folder-name{font:700 18px var(--f-mono)}
+.cards8{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.dcard{position:relative;background:#fff;border:2px solid var(--line);border-radius:12px;padding:12px 8px;text-align:center;cursor:pointer;display:grid;gap:4px;justify-items:center}
+.dcard:hover{border-color:var(--ink)}
+.dcard .em{font-size:44px;line-height:1.1}
+.dcard .nm{font-weight:700;font-size:15px}
+.dcard.sel{border-color:var(--bad);background:var(--bad-soft)}
+.dcard.sel::after{content:"✕ intruso";position:absolute;top:-10px;right:-6px;background:var(--bad);color:#fff;font:700 12px var(--f-display);padding:2px 8px;border-radius:999px}
+.dcard.gone{opacity:.25;filter:grayscale(1);pointer-events:none}
+.confrow{display:grid;gap:6px}
+.bar{display:grid;grid-template-columns:130px 1fr 52px;gap:10px;align-items:center;font-size:15px}
+.bar .track{height:16px;background:#E6EDF4;border-radius:999px;overflow:hidden;border:1.5px solid var(--line)}
+.bar .fill{height:100%;background:var(--signal);transition:width .5s}
+.bar .fill.bad{background:var(--bad)} .bar .fill.ok{background:var(--ok)} .bar .fill.mid{background:#C98A00}
+.bar b{font-family:var(--f-mono);font-size:14px;text-align:right}
+
+/* Sala 2 */
+.dots{display:flex;flex-wrap:wrap;gap:4px;max-width:520px}
+.dots i{width:16px;height:16px;border-radius:50%;background:#C62F3E;display:block}
+.dots i.g{background:#5BA832;box-shadow:0 0 0 2px #fff,0 0 0 4px #5BA832;animation:pop .3s}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:15px}
+.legend span{display:inline-flex;gap:6px;align-items:center}
+.legend i{width:14px;height:14px;border-radius:50%;display:inline-block}
+.tests{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.tcard{background:#fff;border:2px solid var(--line);border-radius:12px;padding:10px;display:grid;gap:6px;justify-items:center;text-align:center;cursor:pointer}
+.tcard:hover{border-color:var(--ink)}
+.tcard.sel{border-color:var(--ink);box-shadow:0 0 0 3px var(--sun)}
+.tcard svg{width:76px;height:76px}
+.tcard .nm{font-weight:700;font-size:15px}
+.tcard .res{font-size:14px;color:var(--muted)}
+.slider{display:grid;gap:8px}
+.slider input[type=range]{width:100%;accent-color:var(--robot);height:30px}
+.slider .val{font:700 22px var(--f-mono)}
+
+/* Sala 3 */
+.tm{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.cls{background:#fff;border:2px solid var(--ink);border-radius:12px;padding:12px;display:grid;gap:10px;align-content:start}
+.cls header{display:flex;align-items:center;gap:10px;justify-content:space-between}
+.cls .nm{font:700 18px var(--f-display);display:flex;gap:8px;align-items:center}
+.cls .n{font:700 14px var(--f-mono);background:var(--paper);padding:2px 8px;border-radius:999px}
+.conds{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.conds .btn{font-size:13px;padding:6px 8px;box-shadow:0 2px 0 var(--ink)}
+.thumbs{display:flex;flex-wrap:wrap;gap:4px;min-height:36px}
+.thumbs span{width:32px;height:32px;border-radius:6px;background:#EEF3F8;border:1px solid var(--line);display:grid;place-items:center;overflow:hidden;font-size:20px}
+.pic{display:inline-block;line-height:1}
+.pic.frente{} .pic.costado{transform:scaleX(-1) skewY(-8deg)} .pic.lejos{transform:scale(.55)} .pic.pocaluz{filter:brightness(.35)} .pic.girado{transform:rotate(38deg)}
+.test-zone{display:grid;grid-template-columns:auto 1fr;gap:18px;align-items:center}
+.mystery{width:150px;height:150px;border:3px solid var(--ink);border-radius:14px;background:#EEF3F8;display:grid;place-items:center;font-size:78px;overflow:hidden}
+.mystery.covered{background:repeating-linear-gradient(45deg,#CBD9E6 0 10px,#DCE7F0 10px 20px);font-size:60px;color:var(--ink-2)}
+.mystery.dark{background:#1F2A38}
+
+/* Sala 4 */
+.q4{display:grid;gap:10px}
+.item4{display:grid;grid-template-columns:auto 1fr auto;gap:8px 14px;align-items:center;background:#fff;border:2px solid var(--line);border-radius:12px;padding:10px 12px}
+.item4 .num{width:34px;height:34px;border-radius:50%;background:var(--ink);color:#fff;font:700 16px var(--f-display);display:grid;place-items:center}
+.item4 .em{font-size:26px;margin-right:8px}
+.item4 .nm{font-weight:700}
+.seg{display:inline-flex;border:2px solid var(--ink);border-radius:10px;overflow:hidden}
+.seg button{border:0;background:#fff;padding:8px 14px;font-weight:700;cursor:pointer}
+.seg button+button{border-left:2px solid var(--ink)}
+.seg button.on{background:var(--ink);color:#fff}
+.item4.right{border-color:var(--ok);background:var(--ok-soft)} .item4.wrong{border-color:var(--bad);background:var(--bad-soft)}
+.item4 .why{grid-column:1/-1;font-size:15px}
+.abc{display:grid;grid-template-columns:repeat(13,minmax(0,1fr));gap:4px;overflow-x:auto}
+.abc div{background:#fff;border:1.5px solid var(--line);border-radius:6px;text-align:center;padding:4px 0;min-width:30px;font-size:13px}
+.abc b{display:block;font:700 16px var(--f-display)}
+.letterin{width:90px;text-align:center;font:700 34px var(--f-display);text-transform:uppercase;border:3px solid var(--ink);border-radius:10px;padding:6px}
+
+/* Sala 5 */
+.dil{display:grid;gap:10px;background:#fff;border:2px solid var(--line);border-radius:12px;padding:14px}
+.dil h3{font-size:18px}
+.opts{display:grid;gap:8px}
+.opt{display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:center;text-align:left;background:#fff;border:2px solid var(--line);border-radius:10px;padding:10px 12px;cursor:pointer}
+.opt:hover{border-color:var(--ink)}
+.opt .k{width:30px;height:30px;border-radius:50%;border:2px solid var(--ink);display:grid;place-items:center;font:700 15px var(--f-display)}
+.opt.picked{border-color:var(--ink);background:#F3F8FC}
+.opt.good{border-color:var(--ok);background:var(--ok-soft)} .opt.nogood{border-color:var(--bad);background:var(--bad-soft)}
+.lock{display:grid;gap:14px;justify-items:center;background:var(--ink);color:#fff;border-radius:14px;padding:20px}
+.dials{display:flex;gap:12px}
+.dial{display:grid;gap:6px;justify-items:center}
+.dial button{width:56px;border:2px solid #7F9BBB;background:var(--ink-2);color:#fff;border-radius:8px;padding:2px 0;cursor:pointer}
+.dial output{width:56px;height:64px;display:grid;place-items:center;background:#fff;color:var(--ink);border-radius:8px;font:700 36px var(--f-mono)}
+.shake{animation:shake .4s}
+
+/* Final y victoria */
+.bank,.target{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+.tile{width:64px;height:76px;border:3px solid var(--ink);border-radius:10px;background:var(--sun);font:700 40px var(--f-display);cursor:pointer;box-shadow:0 4px 0 var(--ink)}
+.tile[disabled]{opacity:.25;cursor:default}
+.hole{width:64px;height:76px;border:3px dashed var(--muted);border-radius:10px;display:grid;place-items:center;background:#fff}
+.hole .tile{box-shadow:none}
+.win{display:grid;gap:20px;text-align:center;justify-items:center}
+.win h1{font-size:clamp(34px,6vw,56px)}
+.facts{display:flex;gap:14px;flex-wrap:wrap;justify-content:center}
+.fact{background:#fff;border:2px solid var(--ink);border-radius:12px;padding:10px 18px;min-width:130px}
+.fact b{display:block;font:700 28px var(--f-mono)}
+.fact small{color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-size:12px}
+.qs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;text-align:left;width:100%}
+.qs .panel{padding:16px}
+
+/* Ventanas */
+.overlay{position:fixed;inset:0;background:rgba(11,37,69,.72);display:grid;place-items:center;padding:16px;z-index:50}
+.overlay[hidden]{display:none}
+.dialog{background:#fff;border:3px solid var(--ink);border-radius:16px;max-width:560px;width:100%;max-height:90vh;overflow:auto;padding:24px;display:grid;gap:14px}
+.dialog.center{text-align:center;justify-items:center}
+.bigletter{width:110px;height:130px;background:var(--sun);border:4px solid var(--ink);border-radius:14px;font:700 84px var(--f-display);display:grid;place-items:center;animation:pop .6s}
+table.key{border-collapse:collapse;width:100%;font-size:15px}
+table.key th,table.key td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));background:var(--ink);color:#fff;padding:10px 18px;border-radius:999px;z-index:60;font-weight:700;max-width:90vw}
+
+@keyframes pop{0%{transform:scale(.4);opacity:0}70%{transform:scale(1.12)}100%{transform:scale(1);opacity:1}}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-8px)}75%{transform:translateX(8px)}}
+@keyframes flick{0%{transform:translateX(0)}50%{transform:translateX(3px)}}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+@media (max-width:820px){
+  .hud-in{grid-template-columns:1fr auto}
+  .slots{grid-column:1/-1;order:3}
+  .intro,.hub,.test-zone{grid-template-columns:1fr}
+  .tm{grid-template-columns:1fr}
+  .qs{grid-template-columns:1fr}
+  .cards8,.tests{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .rooms{grid-template-columns:1fr}
+  .item4{grid-template-columns:auto 1fr}
+  .item4 .seg{grid-column:1/-1;justify-self:start}
+  .bar{grid-template-columns:100px 1fr 46px}
+  .mystery{width:120px;height:120px;font-size:60px}
+}
+</style>
+<header class="hud" id="hud" hidden>
+  <div class="hud-in">
+    <div class="brand"><span class="led" id="led"></span><span>ROBI</span></div>
+    <div class="slots" id="slots" aria-label="Letras conseguidas"></div>
+    <div class="stats">
+      <div class="stat timer" id="timerBox"><b id="timer">50:00</b><small id="timerLabel">Tiempo</small></div>
+      <div class="stat"><b id="hintTotal">0</b><small>Pistas</small></div>
+      <button class="gear" id="teacherBtn" type="button">Docente</button>
+    </div>
+  </div>
+</header>
+
+<main class="app" id="app">
+  <section class="view" id="v-intro"></section>
+  <section class="view" id="v-hub" hidden></section>
+  <section class="view" id="v-room" hidden></section>
+  <section class="view" id="v-final" hidden></section>
+  <section class="view" id="v-win" hidden></section>
+</main>
+
+<div class="overlay" id="overlay" hidden>
+  <div class="dialog" id="dialog" role="dialog" aria-modal="true"></div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<template id="robiSvg">
+  <svg class="robi" viewBox="0 0 200 240" role="img" aria-label="ROBI, el robot de la escuela">
+    <!-- antena -->
+    <line x1="100" y1="30" x2="100" y2="52" stroke="#0B2545" stroke-width="5" stroke-linecap="round"/>
+    <circle cx="100" cy="24" r="9" fill="#9DB2C8" stroke="#0B2545" stroke-width="4"/>
+    <circle cx="100" cy="24" r="9" fill="#FFC933" stroke="#0B2545" stroke-width="4" data-at="3"/>
+    <!-- cabeza -->
+    <rect x="38" y="52" width="124" height="98" rx="22" fill="#FFFFFF" stroke="#0B2545" stroke-width="5"/>
+    <rect x="52" y="66" width="96" height="70" rx="12" fill="#0B2545"/>
+    <!-- pantalla con fallas -->
+    <g class="glitch static" data-until="5">
+      <rect x="58" y="74" width="30" height="6" fill="#FF6B6B"/><rect x="104" y="84" width="38" height="6" fill="#4ADE80"/>
+      <rect x="66" y="100" width="40" height="6" fill="#7FB4FF"/><rect x="92" y="118" width="46" height="6" fill="#FF6B6B"/>
+      <text x="100" y="112" text-anchor="middle" font-family="Chakra Petch,monospace" font-weight="700" font-size="30" fill="#FFFFFF">?!</text>
+    </g>
+    <!-- ojos y boca que se arreglan -->
+    <g data-at="1"><rect x="68" y="82" width="18" height="22" rx="6" fill="#5CE0EC"/></g>
+    <g data-at="2"><rect x="114" y="82" width="18" height="22" rx="6" fill="#5CE0EC"/></g>
+    <path data-at="4" d="M78 118 Q100 134 122 118" fill="none" stroke="#5CE0EC" stroke-width="6" stroke-linecap="round"/>
+    <circle data-at="5" cx="62" cy="116" r="6" fill="#FF8FA3"/><circle data-at="5" cx="138" cy="116" r="6" fill="#FF8FA3"/>
+    <!-- cuerpo -->
+    <rect x="58" y="156" width="84" height="64" rx="14" fill="#D9480F" stroke="#0B2545" stroke-width="5"/>
+    <rect x="78" y="170" width="44" height="22" rx="6" fill="#FFE6DA" stroke="#0B2545" stroke-width="3"/>
+    <circle cx="90" cy="181" r="4" fill="#0B2545"/><circle cx="110" cy="181" r="4" fill="#0B2545" data-at="5"/>
+    <!-- brazos y patas -->
+    <rect x="30" y="164" width="22" height="46" rx="10" fill="#9DB2C8" stroke="#0B2545" stroke-width="4"/>
+    <rect x="148" y="164" width="22" height="46" rx="10" fill="#9DB2C8" stroke="#0B2545" stroke-width="4"/>
+    <rect x="70" y="220" width="24" height="14" rx="5" fill="#0B2545"/><rect x="106" y="220" width="24" height="14" rx="5" fill="#0B2545"/>
+  </svg>
+</template>
+<script>
+'use strict';
+/* ===== Configuración (el docente puede cambiar estos valores) ===== */
+const TEACHER_PIN = '1234';
+const DEFAULT_MINUTES = 50;
+const FREE_HINTS = 3;
+const HINT_PENALTY_MS = 60 * 1000;
+const LOCK_PENALTY_MS = 30 * 1000;
+const WORD = 'DATOS';
+const STORE_KEY = 'robi-escape-v1';
+
+const LETTER = { c1: 'D', c2: 'A', c3: 'T', c4: 'O', c5: 'S' };
+
+const ROOMS = [
+  { id: 'c1', tag: 'Datos',      title: 'El intruso en la base de datos',      blurb: 'Limpiá la carpeta «Pájaro» de ROBI.',
+    story: 'El virus mezcló fotos en la carpeta «Pájaro» con las que ROBI aprende. Si no las limpiás, seguirá confundiéndose.' },
+  { id: 'c2', tag: 'Sesgo',      title: 'El detector de manzanas',             blurb: 'ROBI casi no vio manzanas verdes.',
+    story: 'ROBI aprendió a reconocer manzanas con 50 fotos. Algo en esos datos lo hace fallar con ciertas manzanas.' },
+  { id: 'c3', tag: 'Entrenar',   title: 'Entrená a ROBI',                      blurb: 'Armá un modelo como en Teachable Machine.',
+    story: 'Hay que reentrenar a ROBI para que reconozca animales. Tenés 3 clases y un objeto misterioso para probar.' },
+  { id: 'c4', tag: 'IA o no IA', title: '¿Quién aprende y quién sigue reglas?', blurb: 'Separá las tarjetas en dos grupos.',
+    story: 'El virus mezcló los programas de la escuela. Separá los que usan inteligencia artificial de los que siguen reglas fijas.' },
+  { id: 'c5', tag: 'Ética',      title: 'Decisiones con cabeza y corazón',     blurb: 'Abrí el cofre con tu criterio.',
+    story: 'El cofre de ROBI se abre con un código de 3 números. Para encontrarlo, resolvé tres situaciones difíciles.' }
+];
+
+const HINTS = {
+  c1: [
+    'ROBI está aprendiendo la clase «Pájaro». Mirá cada tarjeta y preguntate: ¿tiene plumas, pico y pone huevos?',
+    'Hay más de un intruso. Uno vuela de noche, pero es un mamífero.',
+    'Otro tiene alas de colores, pero es un insecto. Ojo con el pingüino: no vuela, pero sí es un pájaro.',
+    'Los intrusos son el murciélago y la mariposa.'
+  ],
+  c2: [
+    'Contá cuántas manzanas de cada color usó ROBI para aprender.',
+    'ROBI casi no vio manzanas verdes. ¿Cuál de las pruebas tiene ese color?',
+    'Para arreglarlo hay que darle más ejemplos de lo que casi no conoce. Usá los botones «+ Agregar fotos verdes» de abajo.',
+    'La que más lo confunde es la manzana verde. Agregá al menos 12 fotos de manzanas verdes.'
+  ],
+  c3: [
+    'Cada clase necesita al menos 6 ejemplos para poder entrenar. Pero con pocos ejemplos, ROBI se confunde.',
+    'Destapá el objeto misterioso y fijate cómo está sacada la foto.',
+    'Si la foto es de costado y con poca luz, el conejo necesita ejemplos así.',
+    'Poné al menos 12 fotos de conejo: 3 de costado, 3 con poca luz y el resto variadas. Después entrená otra vez.'
+  ],
+  c4: [
+    'Una IA aprende de datos y mejora con ejemplos. Una regla fija siempre hace lo mismo.',
+    'Preguntate: ¿alguien le escribió todas las reglas, o aprendió de miles de ejemplos?',
+    'Hay 4 tarjetas con IA. Una de ellas reconoce tu cara, como el modelo de Teachable Machine.',
+    'Tienen IA las tarjetas 2, 3, 4 y 6. Sumá esos números y buscá la letra en el abecedario.'
+  ],
+  c5: [
+    'Leé cada situación y elegí la opción más justa y responsable.',
+    'Las buenas opciones piden revisar, mejorar los datos y que las personas decidan.',
+    'El código es el número de la opción correcta de cada situación, en orden.',
+    '@code'
+  ],
+  fin: [
+    'Es lo que una IA necesita para aprender.',
+    'Tiene 5 letras. Es lo que le mostramos a un modelo para que aprenda: fotos, textos, sonidos.',
+    'Empieza con la letra D y termina con la S.',
+    'La palabra es DATOS.'
+  ]
+};
+
+const CONCEPT = {
+  c1: 'Cuando los datos están mal etiquetados, el modelo aprende cosas equivocadas. Es lo mismo que pasa en Teachable Machine si ponés una foto en la clase equivocada.',
+  c2: 'Si los ejemplos no son variados, el modelo falla con lo que casi no vio. Eso se llama sesgo en los datos. La solución: más ejemplos de todo tipo.',
+  c3: 'Entrenar es mostrarle muchos ejemplos variados a un modelo. Con pocos ejemplos, o todos iguales, se confunde con fotos nuevas.',
+  c4: 'Una IA aprende de datos. Un programa con reglas fijas hace siempre lo mismo, aunque sea muy útil.',
+  c5: 'Las personas somos responsables de lo que hace una IA: elegimos los datos, revisamos los resultados y decidimos cómo usarla.'
+};
+
+/* Sala 1 */
+const BIRDS = [
+  { id: 'gorrion',    em: '🐦', nm: 'Gorrión',     bird: true,  why: 'Tiene plumas, pico y pone huevos.' },
+  { id: 'paloma',     em: '🕊️', nm: 'Paloma',      bird: true,  why: 'Tiene plumas, pico y pone huevos.' },
+  { id: 'loro',       em: '🦜', nm: 'Loro',        bird: true,  why: 'Tiene plumas, pico y pone huevos.' },
+  { id: 'pinguino',   em: '🐧', nm: 'Pingüino',    bird: true,  why: 'No vuela, pero tiene plumas, pico y pone huevos. Sí es un pájaro.' },
+  { id: 'pato',       em: '🦆', nm: 'Pato',        bird: true,  why: 'Tiene plumas, pico y pone huevos.' },
+  { id: 'aguila',     em: '🦅', nm: 'Águila',      bird: true,  why: 'Tiene plumas, pico y pone huevos.' },
+  { id: 'murcielago', em: '🦇', nm: 'Murciélago',  bird: false, why: 'Vuela, pero es un mamífero: tiene pelo y amamanta a sus crías.' },
+  { id: 'mariposa',   em: '🦋', nm: 'Mariposa',    bird: false, why: 'Tiene alas, pero es un insecto: no tiene plumas ni pico.' }
+];
+
+/* Sala 2 */
+const APPLE_TESTS = [
+  { id: 'roja',    nm: 'Manzana roja entera',          real: true,  svg: () => appleSvg('#C62F3E', false) },
+  { id: 'verde',   nm: 'Manzana verde',                real: true,  svg: () => appleSvg('#5BA832', false) },
+  { id: 'mordida', nm: 'Manzana roja con un mordisco', real: true,  svg: () => appleSvg('#C62F3E', true) },
+  { id: 'naranja', nm: 'Una naranja',                  real: false, svg: () => orangeSvg() }
+];
+
+function appleSvg(color, bite) {
+  return '<svg viewBox="0 0 64 64" aria-hidden="true">' +
+    '<path d="M32 20c-7-6-20-3-20 13 0 13 8 24 20 24s20-11 20-24c0-16-13-19-20-13z" fill="' + color + '" stroke="#0B2545" stroke-width="2.5"/>' +
+    '<path d="M32 20c0-6 2-10 7-12" fill="none" stroke="#5C3B1E" stroke-width="3" stroke-linecap="round"/>' +
+    '<path d="M38 12c5-4 10-3 12 0-4 4-9 4-12 0z" fill="#3E8E2F" stroke="#0B2545" stroke-width="2"/>' +
+    (bite ? '<circle cx="50" cy="30" r="9" fill="#FFFFFF" stroke="#0B2545" stroke-width="2.5"/>' : '') + '</svg>';
+}
+function orangeSvg() {
+  return '<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="35" r="23" fill="#F59E0B" stroke="#0B2545" stroke-width="2.5"/>' +
+    '<circle cx="24" cy="28" r="1.6" fill="#B45309"/><circle cx="38" cy="40" r="1.6" fill="#B45309"/><circle cx="29" cy="44" r="1.6" fill="#B45309"/><circle cx="40" cy="27" r="1.6" fill="#B45309"/>' +
+    '<path d="M32 13c0-3 2-5 5-5-1 4-2 6-5 5z" fill="#3E8E2F" stroke="#0B2545" stroke-width="2"/></svg>';
+}
+/* Qué tan seguro está ROBI de que la foto es una manzana, según cuántas fotos verdes vio */
+function greenConf(g) { return Math.round(100 * (1 - Math.exp(-g / 6))); }
+function appleConf(id, g) {
+  if (id === 'roja') return 97;
+  if (id === 'verde') return greenConf(g);
+  if (id === 'mordida') return 71;
+  return 8;
+}
+
+/* Sala 3 */
+const ANIMALS = [
+  { id: 'gato',   em: '🐱', nm: 'Gato' },
+  { id: 'perro',  em: '🐶', nm: 'Perro' },
+  { id: 'conejo', em: '🐰', nm: 'Conejo' }
+];
+const CONDS = [
+  { id: 'frente',  nm: 'De frente' },
+  { id: 'costado', nm: 'De costado' },
+  { id: 'lejos',   nm: 'De lejos' },
+  { id: 'pocaluz', nm: 'Con poca luz' },
+  { id: 'girado',  nm: 'Girada' }
+];
+const MYSTERY = { truth: 'conejo', conds: ['costado', 'pocaluz'] };
+
+/* Sala 4 */
+const ITEMS4 = [
+  { n: 1, em: '🧮', nm: 'Calculadora básica',               ai: false, why: 'Hace siempre las mismas operaciones con reglas fijas. No aprende de datos.' },
+  { n: 2, em: '▶️', nm: 'Recomendación de videos',          ai: true,  why: 'Aprende de lo que mirás vos y de lo que miran millones de personas para sugerirte videos.' },
+  { n: 3, em: '🎙️', nm: 'Asistente de voz',                 ai: true,  why: 'Aprendió con muchísimas grabaciones a entender lo que decimos.' },
+  { n: 4, em: '🌐', nm: 'Traductor automático',             ai: true,  why: 'Se entrenó con millones de textos en distintos idiomas.' },
+  { n: 5, em: '⏰', nm: 'Despertador con timbre',           ai: false, why: 'Suena a la hora programada. Es una regla: si es la hora, suena.' },
+  { n: 6, em: '🔓', nm: 'Desbloqueo facial del celular',    ai: true,  why: 'Aprende los rasgos de tu cara, como un modelo de Teachable Machine con fotos.' },
+  { n: 7, em: '🚦', nm: 'Semáforo con temporizador fijo',   ai: false, why: 'Cambia cada tantos segundos, siempre igual. Es una regla fija.' },
+  { n: 8, em: '🛗', nm: 'Ascensor',                         ai: false, why: 'Sigue reglas: va al piso del botón que apretás. No aprende de datos.' }
+];
+
+/* Sala 5: la posición correcta se baraja en cada partida; el código sale de ahí */
+const DILEMMAS = [
+  { q: 'El reconocimiento facial de la escuela no reconoce bien a algunos estudiantes. ¿Qué hacemos?',
+    opts: [
+      { t: 'Ignorarlo: son una minoría.', ok: false, why: 'Si falla con algunas personas, el sistema no es justo. Que sean pocas no lo arregla.' },
+      { t: 'Sumar fotos más variadas y volver a probar con todos.', ok: true, why: 'Más datos variados ayudan a que el modelo funcione bien con todas las personas.' },
+      { t: 'Dejar entrar solo a quienes reconoce.', ok: false, why: 'Dejaría afuera a personas por un error de la máquina. Eso es injusto.' }
+    ] },
+  { q: 'Una IA para elegir al «mejor estudiante» usa solo las notas. ¿Qué falta?',
+    opts: [
+      { t: 'Nada: las notas lo dicen todo.', ok: false, why: 'Las notas no muestran el esfuerzo, la creatividad ni la colaboración.' },
+      { t: 'Usar solo la edad.', ok: false, why: 'La edad no dice nada sobre lo que aprendió una persona.' },
+      { t: 'Que personas revisen las decisiones y se consideren otros aspectos.', ok: true, why: 'Una IA puede ayudar, pero deciden las personas, mirando más que un número.' }
+    ] },
+  { q: 'Un compañero usa una IA para hacer la tarea y entrega lo que salió. ¿Cuál es el uso responsable?',
+    opts: [
+      { t: 'Copiar y pegar sin leerlo.', ok: false, why: 'Sin leerlo no sabés si tiene errores, y tampoco aprendés nada.' },
+      { t: 'Pedirle que lo haga todo sin entenderlo.', ok: false, why: 'La tarea sirve para aprender. Si no entendés, la IA aprendió y vos no.' },
+      { t: 'Usarla para entender, revisar la respuesta y contar que la usó.', ok: true, why: 'Es honesto, y la usás como ayuda para aprender, no para reemplazarte.' }
+    ] }
+];
+
+/* Preguntas del cierre y desafío bonus */
+const CLOSING_QS = [
+  '¿Qué aprendimos sobre cómo «aprende» una IA?',
+  '¿Por qué importa que los datos sean variados?',
+  '¿Quién es responsable de lo que hace una IA?'
+];
+const BONUS = 'Inventen un modelo en Teachable Machine para distinguir dos emociones (por ejemplo, alegre y enojado). ¿Con qué datos lo entrenarían? ¿Qué pasaría si todas las fotos fueran de la misma persona?';
+/* ===== Estado ===== */
+function newState() {
+  return {
+    team: '', startedAt: 0, durationMs: DEFAULT_MINUTES * 60 * 1000, penaltyMs: 0, overtime: false, finishedAt: 0,
+    seed: Math.floor(Math.random() * 1e9), view: 'intro', room: null,
+    solved: {}, letters: [], hints: {}, finalHints: 0,
+    c1: { marked: [], removed: [], tries: 0 },
+    c2: { pick: null, g: 1, step: 1 },
+    c3: { counts: {}, trained: null, covered: true, tested: false },
+    c4: { ans: {}, checked: false, unlocked: false, letter: '' },
+    c5: { pick: {}, code: [0, 0, 0], tries: 0 },
+    fin: { slots: [], tries: 0 }
+  };
+}
+let S = newState();
+
+function save() { if (!S.startedAt) return; try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch (e) {} }
+function load() {
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (!raw) return null;
+    const o = JSON.parse(raw);
+    return o && o.startedAt ? Object.assign(newState(), o) : null;
+  } catch (e) { return null; }
+}
+function wipe() { try { localStorage.removeItem(STORE_KEY); } catch (e) {} }
+
+/* ===== Utilidades ===== */
+const $ = (s, r) => (r || document).querySelector(s);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const pad = n => String(n).padStart(2, '0');
+const fmt = ms => { const s = Math.floor(Math.abs(ms) / 1000); return pad(Math.floor(s / 60)) + ':' + pad(s % 60); };
+function rng(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function shuffled(arr, seed) { const r = rng(seed), a = arr.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+/* Orden de opciones de la sala 5 para esta partida */
+function dilemmaOrder(i) { return shuffled([0, 1, 2], S.seed + i * 101); }
+function lockCode() { return DILEMMAS.map((d, i) => dilemmaOrder(i).findIndex(k => d.opts[k].ok) + 1); }
+
+let toastT;
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, 2600); }
+function robi(n, happy) {
+  const w = document.createElement('div'); w.appendChild($('#robiSvg').content.cloneNode(true));
+  const svg = w.firstElementChild; paintRobi(svg, n); if (happy) svg.classList.add('happy'); return w.innerHTML;
+}
+function paintRobi(svg, n) {
+  svg.querySelectorAll('[data-at]').forEach(el => el.classList.toggle('on', n >= +el.dataset.at));
+  const g = svg.querySelector('.glitch'); if (g) g.style.opacity = String(Math.max(0, 1 - n * 0.24));
+}
+
+/* ===== Tiempo ===== */
+function elapsed() { return Date.now() - S.startedAt + S.penaltyMs; }
+function remaining() { return S.durationMs - elapsed(); }
+function addPenalty(ms, why) { S.penaltyMs += ms; save(); tick(); toast('+' + Math.round(ms / 1000) + ' s de penalización: ' + why); }
+function tick() {
+  if (!S.startedAt || S.finishedAt) return;
+  const r = remaining(), box = $('#timerBox');
+  $('#timer').textContent = (r < 0 ? '+' : '') + fmt(r);
+  $('#timerLabel').textContent = r < 0 ? 'Tiempo extra' : 'Tiempo';
+  box.classList.toggle('warn', r <= 10 * 60 * 1000 && r > 5 * 60 * 1000);
+  box.classList.toggle('crit', r <= 5 * 60 * 1000);
+  if (r <= 0 && !S.overtime) { S.overtime = true; save(); timeUp(); }
+}
+setInterval(tick, 1000);
+function timeUp() {
+  openDialog('<div class="dialog center">' + '<div style="width:170px">' + robi(Object.keys(S.solved).length) + '</div>' +
+    '<h2>Se acabó el tiempo</h2><p>ROBI se quedó sin batería, pero todavía se puede rescatar. Pueden seguir jugando: el reloj va a contar el tiempo extra.</p>' +
+    '<button class="btn primary" data-act="close">Seguir jugando</button></div>', true);
+}
+
+/* ===== Ventanas ===== */
+function openDialog(html, raw) {
+  const d = $('#dialog'); d.innerHTML = html; if (raw) { const inner = d.firstElementChild; d.className = inner.className; d.innerHTML = inner.innerHTML; } else d.className = 'dialog';
+  $('#overlay').hidden = false; const f = d.querySelector('button,input'); if (f) f.focus();
+}
+function closeDialog() { $('#overlay').hidden = true; }
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDialog(); });
+$('#overlay').addEventListener('click', e => { if (e.target.id === 'overlay') closeDialog(); });
+
+/* ===== HUD ===== */
+function renderHud() {
+  const hud = $('#hud'); hud.hidden = !S.startedAt;
+  $('#slots').innerHTML = WORD.split('').map((_, i) => S.letters[i] ? '<div class="slot on">' + S.letters[i] + '</div>' : '<div class="slot">?</div>').join('');
+  const total = Object.values(S.hints).reduce((a, b) => a + b, 0) + S.finalHints;
+  $('#hintTotal').textContent = total;
+  $('#led').classList.toggle('up', Object.keys(S.solved).length >= 5);
+  tick();
+}
+
+/* ===== Navegación ===== */
+const VIEWS = ['intro', 'hub', 'room', 'final', 'win'];
+function unlocked(id) { const i = ROOMS.findIndex(r => r.id === id); return i <= 0 || !!S.solved[ROOMS[i - 1].id]; }
+function go(view, room) {
+  if (view === 'room' && !unlocked(room)) { toast('Primero resuelvan el nivel anterior.'); view = 'hub'; room = null; }
+  S.view = view; S.room = room || null; save();
+  VIEWS.forEach(v => $('#v-' + v).hidden = v !== view);
+  renderHud();
+  ({ intro: renderIntro, hub: renderHub, room: renderRoom, final: renderFinal, win: renderWin })[view]();
+  window.scrollTo({ top: 0 });
+}
+function rerender() {
+  const act = document.activeElement, id = act && act.id;
+  ({ intro: renderIntro, hub: renderHub, room: renderRoom, final: renderFinal, win: renderWin })[S.view]();
+  if (id) { const el = document.getElementById(id); if (el) el.focus({ preventScroll: true }); }
+}
+
+/* ===== Pistas ===== */
+function hintBox(key) {
+  const used = key === 'fin' ? S.finalHints : (S.hints[key] || 0);
+  const list = HINTS[key].map(h => h === '@code' ? 'El código del cofre es ' + lockCode().join(' - ') + '.' : h);
+  const shown = list.slice(0, used).map(h => '<li>' + esc(h) + '</li>').join('');
+  const free = Math.max(0, FREE_HINTS - used), more = used < list.length;
+  const label = !more ? '' : free > 0 ? 'Pedir una pista' : 'Pista final (+1 minuto)';
+  return '<aside class="hintbox"><div class="row"><b>Pistas</b><span class="count">' + (free > 0 ? 'Te quedan ' + free + ' gratis en esta sala.' : 'Las pistas gratis se terminaron.') + '</span>' +
+    (more ? '<button class="btn small" id="hint-btn" data-act="hint" data-key="' + key + '">' + label + '</button>' : '') + '</div>' +
+    (shown ? '<ol>' + shown + '</ol>' : '') + '</aside>';
+}
+function askHint(key) {
+  const used = key === 'fin' ? S.finalHints : (S.hints[key] || 0);
+  if (used >= HINTS[key].length) return;
+  if (used >= FREE_HINTS) addPenalty(HINT_PENALTY_MS, 'pista final');
+  if (key === 'fin') S.finalHints++; else S.hints[key] = used + 1;
+  save(); renderHud(); rerender();
+}
+
+/* ===== Resolver una sala ===== */
+function solve(id) {
+  if (S.solved[id]) return;
+  S.solved[id] = Date.now(); S.letters.push(LETTER[id]); save(); renderHud();
+  openDialog('<div class="dialog center"><span class="chip">Sala resuelta</span><h2>¡Conseguiste una letra!</h2>' +
+    '<div class="bigletter">' + LETTER[id] + '</div>' +
+    '<div class="note info" style="text-align:left"><p><b>Lo que aprendiste</b></p><p>' + esc(CONCEPT[id]) + '</p></div>' +
+    '<button class="btn primary big" data-act="to-hub" id="reward-ok">Volver al mapa</button></div>', true);
+}
+
+/* ===== Inicio ===== */
+function renderIntro() {
+  const saved = load();
+  $('#v-intro').innerHTML =
+    '<div class="intro"><div style="display:grid;gap:18px">' +
+      '<span class="eyebrow">Escape room de inteligencia artificial</span>' +
+      '<h1>Rescatar a ROBI</h1>' +
+      '<p class="story">ROBI, la inteligencia artificial de la escuela, fue atacada por un virus que le llenó la cabeza de datos malos. Ahora no reconoce nada. Para reiniciarlo hay que arreglar su entrenamiento.</p>' +
+      '<ul class="rules"><li><b>1</b><span>Hay <strong>5 niveles</strong>. Al resolver uno se desbloquea el siguiente, y cada uno da una <strong>letra</strong>.</span></li>' +
+      '<li><b>2</b><span>Juntando las 5 letras arman la <strong>palabra clave</strong> que reinicia a ROBI.</span></li>' +
+      '<li><b>3</b><span>Tienen <strong>3 pistas gratis</strong> por sala. Una pista extra cuesta 1 minuto.</span></li></ul>' +
+    '</div><div class="panel" style="display:grid;gap:14px">' + robi(0) +
+      '<div class="field"><label for="team">Nombre del equipo</label><input id="team" maxlength="28" placeholder="Los Circuitos" autocomplete="off"></div>' +
+      '<button class="btn primary big" id="start" data-act="start">Empezar misión</button>' +
+      (saved ? '<button class="btn" id="resume" data-act="resume">Continuar la partida de «' + esc(saved.team || 'equipo') + '»</button>' : '') +
+      '<p style="font-size:14px;color:var(--muted)">Tienen ' + Math.round(S.durationMs / 60000) + ' minutos. <button class="link" id="teacher-link" data-act="teacher">Panel docente</button></p>' +
+    '</div></div>';
+}
+function startGame() {
+  const name = ($('#team').value || '').trim() || 'Equipo ROBI';
+  const keepMs = S.durationMs;
+  S = newState(); S.team = name; S.startedAt = Date.now(); S.durationMs = keepMs || DEFAULT_MINUTES * 60000;
+  go('hub');
+}
+
+/* ===== Mapa ===== */
+function renderHub() {
+  const n = Object.keys(S.solved).length;
+  const tiles = ROOMS.map((r, i) => {
+    const done = !!S.solved[r.id], open = unlocked(r.id);
+    return '<button class="room-tile' + (done ? ' done' : '') + '" id="tile-' + r.id + '" data-act="room" data-id="' + r.id + '"' + (open ? '' : ' disabled') + '>' +
+      '<span class="box">' + (done ? LETTER[r.id] : open ? '?' : '🔒') + '</span><h3>Nivel ' + (i + 1) + ': ' + esc(r.title) + '</h3>' +
+      '<span class="sub"><span class="chip">' + esc(r.tag) + '</span> ' + (done ? 'Resuelto' : open ? esc(r.blurb) : 'Resuelvan el nivel ' + i + ' para abrirlo.') + '</span></button>';
+  }).join('');
+  const ready = n >= 5;
+  $('#v-hub').innerHTML = '<div class="hub"><div class="panel hub-robi">' + robi(n) +
+    '<h2>' + esc(S.team) + '</h2><p>' + (ready ? 'Tienen las 5 letras. ¡Falta la palabra clave!' : 'ROBI está arreglado al ' + Math.round(n / 5 * 100) + '%.') + '</p>' +
+    '<div class="meter" aria-hidden="true"><i style="width:' + (n / 5 * 100) + '%"></i></div></div>' +
+    '<div class="rooms">' + tiles +
+    '<button class="room-tile fin" id="tile-fin" data-act="final"' + (ready ? '' : ' disabled') + '><span class="box">' + (ready ? '★' : '🔒') + '</span><h3>Reiniciar a ROBI</h3>' +
+    '<span class="sub">' + (ready ? 'Ordenen las letras y escriban la palabra clave.' : 'Se abre cuando tengan las 5 letras.') + '</span></button></div></div>';
+}
+
+/* ===== Sala (despacha a cada desafío) ===== */
+function renderRoom() {
+  const r = ROOMS.find(x => x.id === S.room);
+  const body = { c1: bodyC1, c2: bodyC2, c3: bodyC3, c4: bodyC4, c5: bodyC5 }[r.id]();
+  $('#v-room').innerHTML = '<button class="btn small back" id="back" data-act="to-hub">← Volver al mapa</button>' +
+    '<div class="room-head"><span class="chip" style="justify-self:start">' + esc(r.tag) + '</span><h2>' + esc(r.title) + '</h2><p class="story">' + esc(r.story) + '</p></div>' +
+    (S.solved[r.id] ? '<div class="note ok">Sala resuelta. La letra era la <b>' + LETTER[r.id] + '</b>.</div>' : '') +
+    '<div class="panel" style="display:grid;gap:18px">' + body + '</div>' + hintBox(r.id);
+}
+
+/* ===== Sala 1: intruso ===== */
+function bodyC1() {
+  const c = S.c1, left = BIRDS.filter(b => !c.removed.includes(b.id));
+  const cards = BIRDS.map(b => '<button class="dcard' + (c.marked.includes(b.id) ? ' sel' : '') + (c.removed.includes(b.id) ? ' gone' : '') + '" id="b-' + b.id + '" data-act="mark" data-id="' + b.id + '" aria-pressed="' + c.marked.includes(b.id) + '">' +
+    '<span class="em">' + b.em + '</span><span class="nm">' + esc(b.nm) + '</span></button>').join('');
+  const clean = BIRDS.filter(b => !b.bird).every(b => c.removed.includes(b.id));
+  const bat = clean ? 4 : 87 - c.removed.filter(id => id === 'murcielago').length * 40;
+  const msg = c.msg ? '<div class="note ' + c.msg.k + '">' + c.msg.h + '</div>' : '';
+  return '<div class="folder"><div class="folder-top"><span class="folder-name">📁 Clase: Pájaro</span><span class="chip">' + left.length + ' fotos en la carpeta</span></div>' +
+    '<p>Tocá las fotos que <b>no son pájaros</b> para marcarlas como intrusas y después sacalas de la carpeta.</p><div class="cards8">' + cards + '</div></div>' +
+    '<div class="actions"><button class="btn primary" id="clean" data-act="clean"' + (S.solved.c1 ? ' disabled' : '') + '>Sacar las marcadas de la carpeta</button></div>' + msg +
+    '<div class="confrow"><span class="section-title">Lo que piensa ROBI de un murciélago</span><div class="bar"><span>¿Es un pájaro?</span><div class="track"><div class="fill ' + (clean ? 'ok' : 'bad') + '" style="width:' + bat + '%"></div></div><b>' + bat + '%</b></div></div>';
+}
+function actC1(a, id) {
+  const c = S.c1; delete c.msg;
+  if (a === 'mark') { const i = c.marked.indexOf(id); if (i >= 0) c.marked.splice(i, 1); else c.marked.push(id); }
+  if (a === 'clean') {
+    const ids = c.marked.filter(x => !c.removed.includes(x));
+    if (!ids.length) c.msg = { k: 'info', h: 'Marcá primero al menos una foto que no sea un pájaro.' };
+    else {
+      const wrong = ids.filter(x => BIRDS.find(b => b.id === x).bird), right = ids.filter(x => !BIRDS.find(b => b.id === x).bird);
+      right.forEach(x => c.removed.push(x));
+      c.marked = wrong;
+      const rest = BIRDS.filter(b => !b.bird && !c.removed.includes(b.id)).length;
+      if (wrong.length) c.msg = { k: 'bad', h: '<p>¡Cuidado! Sacaste algo que sí es un pájaro. Marcas sin sacar: ' + wrong.map(x => esc(BIRDS.find(b => b.id === x).nm)).join(', ') + '.</p><p>' + esc(BIRDS.find(b => b.id === wrong[0]).why) + '</p>' };
+      else if (rest) c.msg = { k: 'info', h: 'Bien. Sacaste ' + right.length + ', pero todavía queda ' + (rest === 1 ? '1 intruso' : rest + ' intrusos') + ' en la carpeta.' };
+      else { c.msg = { k: 'ok', h: '<p>Carpeta limpia.</p><p>Murciélago: ' + esc(BIRDS[6].why) + ' Mariposa: ' + esc(BIRDS[7].why) + '</p>' }; save(); rerender(); return solve('c1'); }
+    }
+  }
+  save(); rerender();
+}
+/* ===== Sala 2: sesgo ===== */
+function dotsHtml(g) { let h = ''; for (let i = 0; i < 49; i++) h += '<i></i>'; for (let i = 0; i < g; i++) h += '<i class="g"></i>'; return h; }
+function barClass(p) { return p >= 85 ? 'ok' : p >= 50 ? 'mid' : 'bad'; }
+function bodyC2() {
+  const c = S.c2, g = c.g;
+  const tests = APPLE_TESTS.map(t => {
+    const picked = c.pick === t.id;
+    return '<button class="tcard' + (picked ? ' sel' : '') + '" id="t-' + t.id + '" data-act="pick-test" data-id="' + t.id + '">' + t.svg() +
+      '<span class="nm">' + t.nm + '</span><span class="res">' + (picked ? 'ROBI cree que es manzana: <b>' + appleConf(t.id, g) + '%</b>' : 'Tocá para probar') + '</span></button>';
+  }).join('');
+  const says = {
+    roja: ['info', 'Acá ROBI acierta con mucha seguridad. Probá con otra foto.'],
+    mordida: ['info', 'Duda un poco, pero sigue acertando. ¿Habrá otra que lo confunda más?'],
+    naranja: ['info', 'No es una manzana, y ROBI lo sabe: casi no le da chances. ¿Cuál se le escapa?'],
+    verde: ['ok', 'Es una manzana de verdad, pero ROBI casi no vio manzanas verdes y duda. ¡Ahí está el problema!']
+  };
+  const v = c.pick ? '<div class="note ' + says[c.pick][0] + '">' + says[c.pick][1] + '</div>' : '';
+  const conf = greenConf(g);
+  const step2 = c.step === 2 ? '<hr style="border:0;border-top:2px dashed var(--line);width:100%">' +
+    '<div class="slider"><span class="section-title">Ahora arreglen los datos</span><p>ROBI solo vio <b>1 foto verde</b> entre 50. Agregá fotos de manzanas verdes al entrenamiento.</p>' +
+    '<p class="val" id="gval">ROBI tiene ' + g + (g === 1 ? ' foto verde' : ' fotos verdes') + '</p>' +
+    '<div class="actions"><button class="btn" id="add1" data-act="c2-add" data-id="1">+ Agregar 1 foto verde</button>' +
+    '<button class="btn" id="add5" data-act="c2-add" data-id="5">+ Agregar 5 fotos verdes</button>' +
+    '<button class="btn ghost" id="sub1" data-act="c2-add" data-id="-1">− Sacar 1</button></div>' +
+    '<p style="font-size:14px;color:var(--muted)">Apretá los botones y mirá cómo suben los puntitos verdes y la barra de abajo. Cuando la barra llegue al 85% o más, apretá «Reentrenar a ROBI».</p>' +
+    '<div class="dots" id="c2dots" aria-hidden="true">' + dotsHtml(g) + '</div>' +
+    '<div class="legend"><span><i style="background:#C62F3E"></i>49 manzanas rojas</span><span><i style="background:#5BA832"></i>manzanas verdes</span></div>' +
+    '<div class="bar"><span>Manzana verde</span><div class="track"><div class="fill ' + barClass(conf) + '" id="gfill" style="width:' + conf + '%"></div></div><b id="gpct">' + conf + '%</b></div>' +
+    '<div class="actions"><button class="btn primary" id="retrain" data-act="retrain"' + (S.solved.c2 ? ' disabled' : '') + '>Reentrenar a ROBI</button></div></div>' +
+    (c.msg ? '<div class="note ' + c.msg.k + '">' + c.msg.h + '</div>' : '') : '';
+  return '<div style="display:grid;gap:8px"><span class="section-title">Con qué aprendió ROBI: 50 fotos</span><div class="dots" aria-hidden="true">' + dotsHtml(1) + '</div>' +
+    '<div class="legend"><span><i style="background:#C62F3E"></i>49 manzanas rojas</span><span><i style="background:#5BA832"></i>1 manzana verde</span></div></div>' +
+    '<div style="display:grid;gap:10px"><p><b>¿Qué foto de prueba va a confundir más a ROBI?</b> Probá con cada una.</p><div class="tests">' + tests + '</div></div>' + v + step2;
+}
+function updateC2Live() {
+  const g = S.c2.g, d = $('#c2dots'); if (!d) return;
+  d.innerHTML = dotsHtml(g); $('#gval').textContent = g + ' fotos verdes';
+  const conf = greenConf(g), f = $('#gfill'); f.style.width = conf + '%'; f.className = 'fill ' + barClass(conf); $('#gpct').textContent = conf + '%';
+  const r = $('#t-verde .res'); if (r) r.innerHTML = 'ROBI cree que es manzana: <b>' + conf + '%</b>';
+  save();
+}
+function actC2(a, id) {
+  const c = S.c2; delete c.msg;
+  if (a === 'pick-test') { c.pick = id; if (id === 'verde') c.step = 2; }
+  if (a === 'c2-add') c.g = Math.max(1, Math.min(30, c.g + (+id)));
+  if (a === 'retrain') {
+    const conf = greenConf(c.g);
+    if (conf >= 85) { c.msg = { k: 'ok', h: '<p>¡Funcionó! Con ' + c.g + ' fotos verdes ROBI ya reconoce la manzana verde (' + conf + '%).</p><p>Los datos variados hacen que el modelo funcione con todos los casos.</p>' }; save(); rerender(); return solve('c2'); }
+    c.msg = { k: 'bad', h: 'ROBI todavía duda (' + conf + '%). Necesita más ejemplos de manzanas verdes.' };
+  }
+  save(); rerender();
+}
+
+/* ===== Sala 3: entrenar ===== */
+function cnt(id) { return S.c3.counts[id] || (S.c3.counts[id] = { n: 0 }); }
+function thumbs(id) {
+  const c = cnt(id), a = ANIMALS.find(x => x.id === id), out = [];
+  CONDS.forEach(k => { for (let i = 0; i < (c[k.id] || 0); i++) out.push('<span><i class="pic ' + k.id + '">' + a.em + '</i></span>'); });
+  return out.join('');
+}
+function predict(snap) {
+  const T = MYSTERY.truth, nT = (snap[T] && snap[T].n) || 0, cf = Math.min(1, nT / 15);
+  const match = Math.min.apply(null, MYSTERY.conds.map(k => Math.min(1, ((snap[T] && snap[T][k]) || 0) / 3)));
+  const t = 0.08 + 0.92 * cf * (0.4 + 0.6 * match);
+  const others = ANIMALS.filter(a => a.id !== T), sum = others.reduce((s, a) => s + ((snap[a.id] && snap[a.id].n) || 0), 0), p = {};
+  others.forEach(a => { const share = sum ? ((snap[a.id] && snap[a.id].n) || 0) / sum : 1 / others.length; p[a.id] = Math.round((1 - t) * share * 100); });
+  p[T] = 100 - others.reduce((s, a) => s + p[a.id], 0);
+  return { p: p, cf: cf, match: match };
+}
+function bodyC3() {
+  const c = S.c3, snapNow = JSON.stringify(c.counts);
+  const ready = ANIMALS.every(a => cnt(a.id).n >= 6);
+  const classes = ANIMALS.map(a => {
+    const k = cnt(a.id);
+    return '<div class="cls"><header><span class="nm"><span style="font-size:26px">' + a.em + '</span>' + a.nm + '</span><span class="n">' + k.n + ' fotos</span></header>' +
+      '<div class="conds">' + CONDS.map(q => '<button class="btn small" id="add-' + a.id + '-' + q.id + '" data-act="c3-add" data-a="' + a.id + '" data-k="' + q.id + '" title="Agrega 3 fotos">+ ' + q.nm + '</button>').join('') + '</div>' +
+      '<div class="thumbs">' + thumbs(a.id) + '</div>' +
+      '<button class="link" id="reset-' + a.id + '" data-act="c3-reset" data-a="' + a.id + '" style="justify-self:start;font-size:14px">Borrar ejemplos</button></div>';
+  }).join('');
+  const trainedNote = !c.trained ? '' : (JSON.stringify(c.trained) === snapNow ? '<span class="chip">Modelo entrenado</span>' : '<span class="chip" style="background:var(--robot-soft);color:var(--robot-dk)">Cambiaron los ejemplos: entrená de nuevo</span>');
+  const covered = c.covered;
+  const mys = covered ? '<div class="mystery covered" aria-label="Objeto tapado">?</div>' :
+    '<div><div class="mystery' + (MYSTERY.conds.includes('pocaluz') ? ' dark' : '') + '"><i class="pic ' + MYSTERY.conds.join(' ') + '">' + ANIMALS.find(a => a.id === MYSTERY.truth).em + '</i></div></div>';
+  let res = '';
+  if (c.tested && c.trained) {
+    const r = predict(c.trained), top = ANIMALS.slice().sort((a, b) => r.p[b.id] - r.p[a.id])[0], win = top.id === MYSTERY.truth && r.p[top.id] >= 70;
+    res = '<div class="confrow">' + ANIMALS.map(a => '<div class="bar"><span>' + a.nm + '</span><div class="track"><div class="fill ' + (a.id === top.id ? (win ? 'ok' : 'bad') : '') + '" style="width:' + r.p[a.id] + '%"></div></div><b>' + r.p[a.id] + '%</b></div>').join('') + '</div>';
+    if (win) res += '<div class="note ok"><p>¡ROBI lo reconoce: es un ' + ANIMALS.find(a => a.id === MYSTERY.truth).nm.toLowerCase() + ' (' + r.p[top.id] + '%)!</p></div>';
+    else {
+      const miss = []; if (r.cf < 1) miss.push('más fotos de ' + MYSTERY.truth + 's'); MYSTERY.conds.forEach(k => { const have = ((c.trained[MYSTERY.truth] || {})[k]) || 0; if (have < 3) miss.push('fotos «' + CONDS.find(q => q.id === k).nm.toLowerCase() + '»'); });
+      res += '<div class="note bad"><p>ROBI cree que es un ' + top.nm.toLowerCase() + ' (' + r.p[top.id] + '%). Se confundió.</p><p>Pensá qué le falta aprender. Miren cómo está sacada la foto misteriosa.</p></div>';
+    }
+  }
+  return '<p>Igual que en Teachable Machine: cada botón agrega 3 fotos sacadas de una forma distinta. Necesitan al menos <b>6 fotos por clase</b> para entrenar.</p>' +
+    '<div class="tm">' + classes + '</div>' +
+    '<div class="actions"><button class="btn primary" id="train" data-act="c3-train"' + (ready ? '' : ' disabled') + '>Entrenar modelo</button>' + trainedNote + (ready ? '' : '<span style="font-size:14px;color:var(--muted)">Falta completar 6 fotos en cada clase.</span>') + '</div>' +
+    '<div class="test-zone">' + mys + '<div style="display:grid;gap:10px"><span class="section-title">Objeto misterioso</span>' +
+    (covered ? '<p>La docente lo tapó. Destápenlo para ver cómo está sacada la foto.</p><div class="actions"><button class="btn" id="uncover" data-act="c3-uncover">Destapar</button></div>' :
+      '<p>La foto está tomada <b>' + MYSTERY.conds.map(k => CONDS.find(q => q.id === k).nm.toLowerCase()).join(' y ') + '</b>. ¿Qué animal es según ROBI?</p><div class="actions"><button class="btn primary" id="probar" data-act="c3-test"' + (c.trained ? '' : ' disabled') + '>Probar con ROBI</button></div>') +
+    '</div></div>' + res;
+}
+function actC3(a, d) {
+  const c = S.c3;
+  if (a === 'c3-add') { const k = cnt(d.a); if (k.n >= 30) { toast('Ya tiene muchas fotos. Alcanza con 30.'); return; } k[d.k] = (k[d.k] || 0) + 3; k.n += 3; c.tested = false; }
+  if (a === 'c3-reset') { c.counts[d.a] = { n: 0 }; c.tested = false; }
+  if (a === 'c3-train') { c.trained = JSON.parse(JSON.stringify(c.counts)); c.tested = false; toast('ROBI terminó de entrenar.'); }
+  if (a === 'c3-uncover') c.covered = false;
+  if (a === 'c3-test') {
+    c.tested = true; save(); rerender();
+    const r = predict(c.trained); if (r.p[MYSTERY.truth] >= 70) solve('c3'); return;
+  }
+  save(); rerender();
+}
+
+/* ===== Sala 4: IA o no IA ===== */
+function bodyC4() {
+  const c = S.c4, all = ITEMS4.every(i => c.ans[i.n] !== undefined);
+  const items = ITEMS4.map(i => {
+    const a = c.ans[i.n], shown = c.checked && a !== undefined, ok = a === i.ai;
+    return '<div class="item4' + (shown ? (ok ? ' right' : ' wrong') : '') + '"><span class="num">' + i.n + '</span><span><span class="em">' + i.em + '</span><span class="nm">' + i.nm + '</span></span>' +
+      '<span class="seg"><button id="a-' + i.n + '-y" data-act="c4-set" data-n="' + i.n + '" data-v="1" class="' + (a === true ? 'on' : '') + '" aria-pressed="' + (a === true) + '">Usa IA</button>' +
+      '<button id="a-' + i.n + '-n" data-act="c4-set" data-n="' + i.n + '" data-v="0" class="' + (a === false ? 'on' : '') + '" aria-pressed="' + (a === false) + '">Reglas fijas</button></span>' +
+      (shown ? '<span class="why">' + (ok ? '✔ ' : '✘ Mirá de nuevo: ') + esc(i.why) + '</span>' : '') + '</div>';
+  }).join('');
+  const wrongN = c.checked ? ITEMS4.filter(i => c.ans[i.n] !== i.ai).length : 0;
+  const msg = c.checked && wrongN ? '<div class="note bad">Hay ' + wrongN + (wrongN === 1 ? ' tarjeta mal clasificada' : ' tarjetas mal clasificadas') + '. Leé las explicaciones y corregí.</div>' : '';
+  const abc = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map((l, i) => '<div><b>' + l + '</b>' + (i + 1) + '</div>').join('');
+  const step2 = c.unlocked ? '<hr style="border:0;border-top:2px dashed var(--line);width:100%"><div style="display:grid;gap:12px"><span class="section-title">Código final</span>' +
+    '<p>Sumen los números de las tarjetas que <b>usan IA</b>. Busquen en el abecedario la letra que tiene ese número.</p><div class="abc">' + abc + '</div><p style="font-size:14px;color:var(--muted)">El abecedario va sin la Ñ.</p>' +
+    '<div class="actions"><label for="c4-letter" style="font-weight:700">La letra es</label><input class="letterin" id="c4-letter" maxlength="1" value="' + esc(c.letter || '') + '" autocomplete="off"><button class="btn primary" id="c4-go" data-act="c4-letter"' + (S.solved.c4 ? ' disabled' : '') + '>Probar letra</button></div>' +
+    (c.lmsg ? '<div class="note ' + c.lmsg.k + '">' + c.lmsg.h + '</div>' : '') + '</div>' : '';
+  return '<p>Decidí para cada tarjeta si <b>usa IA</b> (aprende de datos) o si sigue <b>reglas fijas</b>.</p><div class="q4">' + items + '</div>' + msg +
+    '<div class="actions"><button class="btn primary" id="c4-check" data-act="c4-check"' + (all ? '' : ' disabled') + '>Comprobar</button>' + (all ? '' : '<span style="font-size:14px;color:var(--muted)">Clasifiquen las 8 tarjetas.</span>') + '</div>' + step2;
+}
+function actC4(a, d) {
+  const c = S.c4;
+  if (a === 'c4-set') { c.ans[d.n] = d.v === '1'; c.checked = false; }
+  if (a === 'c4-check') { c.checked = true; if (ITEMS4.every(i => c.ans[i.n] === i.ai)) { c.unlocked = true; toast('¡Todas bien! Ahora el código final.'); } }
+  if (a === 'c4-letter') {
+    const v = ($('#c4-letter').value || '').trim().toUpperCase(); c.letter = v;
+    if (v === 'O') { c.lmsg = { k: 'ok', h: '<p>2 + 3 + 4 + 6 = 15, y la letra 15 es la O.</p>' }; save(); rerender(); return solve('c4'); }
+    c.lmsg = { k: 'bad', h: v ? 'La letra ' + esc(v) + ' no es. Revisen la suma de los números de las tarjetas con IA.' : 'Escribí una letra.' };
+  }
+  save(); rerender();
+}
+
+/* ===== Sala 5: ética y cofre ===== */
+let shakeLock = false;
+function bodyC5() {
+  const c = S.c5;
+  const dil = DILEMMAS.map((d, i) => {
+    const order = dilemmaOrder(i), picked = c.pick[i];
+    const opts = order.map((k, pos) => {
+      const o = d.opts[k], on = picked === k;
+      return '<button class="opt' + (on ? (o.ok ? ' good' : ' nogood') : '') + '" id="o-' + i + '-' + pos + '" data-act="c5-pick" data-d="' + i + '" data-k="' + k + '"><span class="k">' + (pos + 1) + '</span><span>' + esc(o.t) + '</span></button>';
+    }).join('');
+    const fb = picked !== undefined ? '<div class="note ' + (d.opts[picked].ok ? 'ok' : 'bad') + '"><p>' + (d.opts[picked].ok ? 'Buena decisión.' : 'No es la mejor opción.') + '</p><p>' + esc(d.opts[picked].why) + '</p></div>' : '';
+    return '<div class="dil"><h3>Situación ' + (i + 1) + '</h3><p>' + esc(d.q) + '</p><div class="opts">' + opts + '</div>' + fb + '</div>';
+  }).join('');
+  const dials = c.code.map((v, j) => '<div class="dial"><button id="up-' + j + '" data-act="c5-dial" data-j="' + j + '" data-s="1" aria-label="Subir número ' + (j + 1) + '">▲</button><output aria-label="Número ' + (j + 1) + '">' + v + '</output><button id="dn-' + j + '" data-act="c5-dial" data-j="' + j + '" data-s="-1" aria-label="Bajar número ' + (j + 1) + '">▼</button></div>').join('');
+  const lm = c.msg ? '<div class="note ' + c.msg.k + '" style="width:100%">' + c.msg.h + '</div>' : '';
+  const out = '<div class="dil" style="gap:12px"><h3>Cofre de ROBI</h3><p>Cada opción tiene un número. El código es el número de la opción correcta de cada situación, en orden.</p>' +
+    '<div class="lock' + (shakeLock ? ' shake' : '') + '"><span class="section-title" style="color:#A9C0DA">Código de 3 números</span><div class="dials">' + dials + '</div>' +
+    '<button class="btn primary" id="c5-open" data-act="c5-open"' + (S.solved.c5 ? ' disabled' : '') + '>Abrir el cofre</button></div>' + lm + '<p style="font-size:14px;color:var(--muted)">Cada código equivocado suma 30 segundos al reloj.</p></div>';
+  shakeLock = false;
+  return dil + out;
+}
+function actC5(a, d) {
+  const c = S.c5; delete c.msg;
+  if (a === 'c5-pick') c.pick[d.d] = +d.k;
+  if (a === 'c5-dial') c.code[+d.j] = (c.code[+d.j] + +d.s + 10) % 10;
+  if (a === 'c5-open') {
+    if (c.code.join('-') === lockCode().join('-')) { c.msg = { k: 'ok', h: '<p>Se abrió el cofre.</p>' }; save(); rerender(); return solve('c5'); }
+    c.tries++; shakeLock = true; c.msg = { k: 'bad', h: 'El código no es correcto. Resuelvan las tres situaciones y busquen el número de la opción buena.' };
+    addPenalty(LOCK_PENALTY_MS, 'código equivocado');
+  }
+  save(); rerender();
+}
+/* ===== Final: palabra clave ===== */
+function renderFinal() {
+  const f = S.fin, used = f.slots;
+  const bank = shuffled(S.letters.map((_, i) => i), S.seed).map(i => { const l = S.letters[i]; return '<button class="tile" id="bank-' + i + '" data-act="fin-place" data-i="' + i + '"' + (used.includes(i) ? ' disabled' : '') + ' aria-label="Letra ' + l + '">' + l + '</button>'; }).join('');
+  const holes = WORD.split('').map((_, p) => '<div class="hole">' + (used[p] !== undefined ? '<button class="tile" id="slot-' + p + '" data-act="fin-remove" data-p="' + p + '" aria-label="Quitar letra ' + S.letters[used[p]] + '">' + S.letters[used[p]] + '</button>' : '') + '</div>').join('');
+  const full = used.length === WORD.length;
+  $('#v-final').innerHTML = '<button class="btn small back" id="back" data-act="to-hub">← Volver al mapa</button>' +
+    '<div class="room-head"><span class="chip" style="justify-self:start">Último paso</span><h2>Reiniciar a ROBI</h2><p class="story">Ordenen las 5 letras para formar la palabra clave. Pista: es lo que una inteligencia artificial necesita para aprender.</p></div>' +
+    '<div class="panel" style="display:grid;gap:20px;justify-items:center"><div style="width:150px">' + robi(5) + '</div>' +
+    '<div class="target" aria-label="Palabra clave">' + holes + '</div>' +
+    '<span class="section-title">Letras conseguidas</span><div class="bank">' + bank + '</div>' +
+    (f.msg ? '<div class="note bad">' + f.msg + '</div>' : '') +
+    '<button class="btn primary big" id="fin-check" data-act="fin-check"' + (full ? '' : ' disabled') + '>Reiniciar a ROBI</button></div>' + hintBox('fin');
+}
+function actFin(a, d) {
+  const f = S.fin; delete f.msg;
+  if (a === 'fin-place') { if (!f.slots.includes(+d.i) && f.slots.length < WORD.length) f.slots.push(+d.i); }
+  if (a === 'fin-remove') f.slots.splice(+d.p, 1);
+  if (a === 'fin-check') {
+    const w = f.slots.map(i => S.letters[i]).join('');
+    if (w === WORD) { S.finishedAt = Date.now(); save(); return go('win'); }
+    f.tries++; f.msg = 'ROBI sigue sin reiniciarse. Esa palabra no es la clave. Prueben otro orden.';
+  }
+  save(); rerender();
+}
+
+/* ===== Victoria ===== */
+function renderWin() {
+  const total = Object.values(S.hints).reduce((a, b) => a + b, 0) + S.finalHints;
+  const ms = (S.finishedAt || Date.now()) - S.startedAt + S.penaltyMs;
+  $('#v-win').innerHTML = '<div class="win"><span class="eyebrow">Misión cumplida</span><h1>¡ROBI está de vuelta!</h1>' +
+    '<div style="width:230px">' + robi(5, true) + '</div>' +
+    '<p class="lead">Equipo <b>' + esc(S.team) + '</b>, arreglaron su entrenamiento con <b>DATOS</b> mejores. Sin buenos datos, una IA no puede aprender bien.</p>' +
+    '<div class="facts"><div class="fact"><b>' + fmt(ms) + '</b><small>Tiempo total</small></div><div class="fact"><b>' + total + '</b><small>Pistas usadas</small></div><div class="fact"><b>5/5</b><small>Salas resueltas</small></div></div>' +
+    '<h2>Para conversar en equipo</h2><div class="qs">' + CLOSING_QS.map(q => '<div class="panel"><p><b>' + esc(q) + '</b></p></div>').join('') + '</div>' +
+    '<div class="panel" style="text-align:left;width:100%"><span class="eyebrow">Desafío bonus</span><p style="margin-top:6px">' + esc(BONUS) + '</p></div>' +
+    '<button class="btn" id="again" data-act="again">Jugar de nuevo</button></div>';
+}
+
+/* ===== Panel docente ===== */
+function teacherGate() {
+  openDialog('<h2>Panel docente</h2><p>Escribí el PIN para continuar.</p><div class="field"><label for="pin">PIN</label><input id="pin" type="password" inputmode="numeric" autocomplete="off"></div>' +
+    '<div class="actions"><button class="btn primary" id="pin-ok" data-act="pin-ok">Entrar</button><button class="btn ghost" data-act="close">Cerrar</button></div><div id="pin-msg"></div>');
+}
+function teacherPanel() {
+  const code = lockCode().join(' - ');
+  openDialog('<h2>Panel docente</h2><table class="key"><tr><th>Sala</th><th>Respuesta</th></tr>' +
+    '<tr><td>Intruso (D)</td><td>Murciélago y mariposa. El pingüino sí es pájaro.</td></tr>' +
+    '<tr><td>Manzanas (A)</td><td>Manzana verde. Hay que llegar a 12 fotos verdes o más.</td></tr>' +
+    '<tr><td>Entrenar (T)</td><td>12 fotos de conejo o más, con 3 de costado y 3 con poca luz.</td></tr>' +
+    '<tr><td>IA o no IA (O)</td><td>Usan IA las tarjetas 2, 3, 4 y 6. 2+3+4+6 = 15, la letra O.</td></tr>' +
+    '<tr><td>Ética (S)</td><td>Código de esta partida: ' + code + '</td></tr>' +
+    '<tr><td>Final</td><td>DATOS</td></tr></table>' +
+    '<div class="field"><label for="mins">Tiempo total (minutos)</label><input id="mins" type="number" min="5" max="120" value="' + Math.round(S.durationMs / 60000) + '"></div>' +
+    '<div class="actions"><button class="btn" id="t-set" data-act="time-set">Cambiar tiempo</button>' +
+    (S.startedAt ? '<button class="btn" id="t-add" data-act="time-add">Sumar 5 minutos</button><button class="btn" id="t-reset" data-act="reset">Reiniciar juego</button>' : '') +
+    '<button class="btn ghost" data-act="close">Cerrar</button></div>');
+}
+
+/* ===== Eventos ===== */
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-act]'); if (!el || el.disabled) return;
+  const a = el.dataset.act, d = el.dataset;
+  if (a === 'start') return startGame();
+  if (a === 'resume') { const o = load(); if (o) { S = o; go(S.finishedAt ? 'win' : S.view === 'intro' ? 'hub' : S.view, S.room); } return; }
+  if (a === 'close') return closeDialog();
+  if (a === 'teacher') return teacherGate();
+  if (a === 'to-hub') { closeDialog(); return go('hub'); }
+  if (a === 'room') return go('room', d.id);
+  if (a === 'final') return go('final');
+  if (a === 'hint') return askHint(d.key);
+  if (a === 'mark' || a === 'clean') return actC1(a, d.id);
+  if (a === 'pick-test' || a === 'retrain' || a === 'c2-add') return actC2(a, d.id);
+  if (a.startsWith('c3-')) return actC3(a, d);
+  if (a.startsWith('c4-')) return actC4(a, d);
+  if (a.startsWith('c5-')) return actC5(a, d);
+  if (a.startsWith('fin-')) return actFin(a, d);
+  if (a === 'again') { wipe(); S = newState(); return go('intro'); }
+  if (a === 'pin-ok') { if ($('#pin').value === TEACHER_PIN) teacherPanel(); else $('#pin-msg').innerHTML = '<div class="note bad">PIN incorrecto.</div>'; return; }
+  if (a === 'time-set') {
+    const m = Math.min(120, Math.max(5, parseInt($('#mins').value, 10) || DEFAULT_MINUTES)); S.durationMs = m * 60000; save(); tick(); closeDialog(); return toast('Tiempo total: ' + m + ' minutos.');
+  }
+  if (a === 'time-add') { S.durationMs += 5 * 60000; S.overtime = false; save(); tick(); closeDialog(); return toast('Se sumaron 5 minutos.'); }
+  if (a === 'reset') { wipe(); S = newState(); closeDialog(); return go('intro'); }
+});
+document.addEventListener('input', e => {
+  if (e.target.id === 'gslider') { S.c2.g = +e.target.value; updateC2Live(); }
+});
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  if (e.target.id === 'team') startGame();
+  if (e.target.id === 'pin') $('#pin-ok').click();
+});
+$('#teacherBtn').addEventListener('click', teacherGate);
+
+/* ===== Arranque ===== */
+go('intro');
+</script>
